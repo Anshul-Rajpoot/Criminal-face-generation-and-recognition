@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Face Matcher AI</title>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: "Segoe UI", sans-serif;
+      background: #0f172a;
+      color: #fff;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: auto;
+      padding: 20px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    header h1 {
+      font-size: 32px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      gap: 20px;
+    }
+
+    .card {
+      background: #1e293b;
+      padding: 20px;
+      border-radius: 15px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    }
+
+    label {
+      display: block;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+      border-radius: 8px;
+      border: none;
+      background: #334155;
+      color: white;
+      outline: none;
+    }
+
+    input[type="file"] {
+      background: none;
+    }
+
+    input[type="radio"] {
+      width: auto;
+      padding: 0;
+      margin: 0;
+    }
+
+    .radio-group {
+      display: flex;
+      gap: 12px;
+      margin-top: 5px;
+    }
+
+    .radio-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      padding: 10px;
+      border-radius: 8px;
+      background: #334155;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    button {
+      margin-top: 15px;
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #6366f1, #3b82f6);
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+
+    button:hover {
+      transform: scale(1.03);
+      opacity: 0.9;
+    }
+
+    .matches {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-top: 20px;
+    }
+
+    .match {
+      background: #334155;
+      padding: 10px;
+      border-radius: 10px;
+      text-align: center;
+      transition: 0.3s;
+    }
+
+    .match:hover {
+      transform: translateY(-5px);
+    }
+
+    .match img {
+      width: 100%;
+      border-radius: 8px;
+    }
+
+    .score {
+      color: #22c55e;
+      font-weight: bold;
+    }
+
+    .flash {
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+
+    .flash.success { background: #16a34a; }
+    .flash.error { background: #dc2626; }
+    .flash.warning { background: #f59e0b; }
+
+    @media (max-width: 768px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="container">
+
+  <header>
+    <h1>👤 Face Matcher AI</h1>
+    <p>Criminal Identification System</p>
+  </header>
+
+  <!-- FLASH MESSAGES -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="flash {{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <div class="grid">
+
+    <!-- ENROLL -->
+    <div class="card">
+      <h2>Add Criminal</h2>
+
+      <form action="{{ url_for('enroll') }}" method="post" enctype="multipart/form-data">
+
+        <label>Name</label>
+        <input type="text" name="name" required>
+
+        <label>Age</label>
+        <input type="number" name="age" required>
+
+        <label>Gender</label>
+        <select name="sex" required>
+          <option value="">Select</option>
+          <option>Male</option>
+          <option>Female</option>
+          <option>Other</option>
+        </select>
+
+        <label>Address</label>
+        <input type="text" name="address" required>
+
+        <label>Height (cm)</label>
+        <input type="number" name="height" required>
+
+        <label>Weight (kg)</label>
+        <input type="number" name="weight" required>
+
+        <label>Crime</label>
+        <input type="text" name="crime" required>
+
+        <label>Status</label>
+        <div class="radio-group">
+          <label class="radio-option">
+            <input type="radio" name="status" value="ARRESTED" checked>
+            Arrested
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="status" value="NOT ARRESTED">
+            Not arrested
+          </label>
+        </div>
+
+        <label>Upload Image</label>
+        <input type="file" name="image" accept=".jpg,.jpeg,.png" required>
+
+        <button type="submit">➕ Add Criminal</button>
+
+      </form>
+    </div>
+
+    <!-- SEARCH -->
+    <div class="card">
+      <h2>Search Face</h2>
+
+      <form action="{{ url_for('search') }}" method="post" enctype="multipart/form-data">
+
+        <label></label>
+        <select name="sex_filter">
+          <option value="">Any</option>
+          <option>Male</option>
+          <option>Female</option>
+          <option>Other</option>
+        </select>
+
+        <label>Upload Image</label>
+        <input type="file" name="image" required>
+
+        <button type="submit">🔍 Search</button>
+
+      </form>
+
+      {% if matches %}
+      <div class="matches">
+        {% for m in matches %}
+        <div class="match">
+
+          {% if m.imageURL %}
+          <img src="{{ m.imageURL }}">
+          {% endif %}
+
+          <p class="score">Match: {{ (m.score * 100) | round(1) }}%</p>
+
+          <p><b>{{ m.name }}</b></p>
+          <p>Age: {{ m.age }}</p>
+          <p>Sex: {{ m.sex }}</p>
+          <p>Crime: {{ m.crime }}</p>
+          <p>Status: {{ m.status }}</p>
+
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+    </div>
+
+  </div>
+
+</div>
+
+</body>
+</html>
