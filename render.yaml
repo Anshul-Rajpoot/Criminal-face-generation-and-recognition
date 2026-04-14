@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: criminal-face-backend
+    env: python
+    plan: free
+    buildCommand: pip install -r Backend/requirements.txt
+    startCommand: gunicorn app:app
+    rootDir: Backend
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.13
