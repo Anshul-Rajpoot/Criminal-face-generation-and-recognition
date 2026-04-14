@@ -11,7 +11,10 @@
 /* LEFT PANEL */
 .left {
   flex: 1;
-  padding: 20px;
+  padding: 10px;
+   overflow-y: auto;
+   height: 100%;
+
 }
 
 .right {
@@ -62,7 +65,7 @@
 /* IMAGE WRAPPER */
 .imgWrapper {
   width: 100%;
-  height: 180px;
+  height: 170px;
   overflow: hidden;
   border-radius: 10px;
 }

@@ -126,8 +126,14 @@ export function useCanvas(showToast) {
 
   // ─── Mouse helpers ───────────────────────────────────────────────────────
   const getCanvasPos = (e) => {
-    const rect = canvasRef.current.getBoundingClientRect();
-    return { mx: e.clientX - rect.left, my: e.clientY - rect.top };
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      mx: (e.clientX - rect.left) * scaleX,
+      my: (e.clientY - rect.top) * scaleY,
+    };
   };
 
   const onMouseDown = useCallback((e) => {

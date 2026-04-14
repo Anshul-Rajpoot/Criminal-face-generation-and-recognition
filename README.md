@@ -1,117 +1,87 @@
-# 🕵️ Criminal Face Generation & Recognition System
+# 🕵️ Criminal Face Generation & Recognition
 
 <p align="center">
-  <img src="Frontend/public/assets/logo.png" alt="Project logo" width="220"/>
+  <img src="Frontend/public/assets/logo.png" alt="Project logo" width="240" />
 </p>
 
 <p align="center">
-  Generate composite faces and perform intelligent face matching using Deep Learning.
+  A full‑stack app that generates a composite face (layered assets) and performs face matching against enrolled profiles stored in MongoDB.
 </p>
 
----
+## ✨ What this project does
 
-## 🚀 Overview
+- **Face generation (frontend editor)**: build a face by combining hair/eyes/nose/etc. assets on a canvas.
+- **Face search**: upload an image (or a generated face) and find the closest matches in the database.
+- **Criminal profile enrollment (admin-only)**: add a profile + image, generate face embeddings, store everything in MongoDB.
+- **Member search**: search enrolled profiles by name (optional sex filter).
+- **Role-based access control**: only `ADMIN` users can upload/enroll.
 
-This project is a **full-stack web application** that allows users to:
+## 🧱 Tech stack
 
-- 🎨 Generate a face by combining facial components (eyes, nose, hair, etc.)
-- 🔍 Match faces against a criminal database using AI embeddings
-- 🧾 Enroll criminal profiles (Admin only)
-- 👥 Search and filter stored profiles
-- 🔐 Secure system with role-based access control
+- **Frontend**: React + Vite
+- **Backend**: Flask
+- **Database**: MongoDB (local or Atlas)
+- **Face embeddings / matching**: DeepFace + cosine similarity
+- **Image hosting**: Cloudinary
 
----
+## 📁 Repository layout
 
-## ✨ Features
-
-### 🎭 Face Generation (Frontend Editor)
-- Interactive UI to build faces using layered assets
-- Canvas-based rendering
-
-### 🔎 Face Matching
-- Upload image or generated face
-- Uses **DeepFace embeddings + cosine similarity**
-- Returns closest matches
-
-### 🧑‍💼 Criminal Profile Enrollment (Admin Only)
-- Add profile details + image
-- Generate and store embeddings in MongoDB
-
-### 🔍 Member Search
-- Search by name
-- Optional filters (e.g., sex)
-
-### 🔐 Authentication & Authorization
-- JWT-based login system
-- Role-based access (`ADMIN`, `NORMAL`)
-
----
-
-## 🧱 Tech Stack
-
-| Layer        | Technology |
-|-------------|------------|
-| Frontend     | React + Vite |
-| Backend      | Flask |
-| Database     | MongoDB |
-| AI/ML        | DeepFace |
-| Image Hosting| Cloudinary |
-
----
-
-## 📁 Project Structure
-
-
+```text
 Backend/
-│── app.py
-│── db_inspect.py
-│── templates/
-│ └── index.html
+  app.py
+  db_inspect.py
+  .env
+  templates/
+    index.html
 
 Frontend/
-│── src/
-│── public/
-│── package.json
+  src/
+  public/
+  package.json
+```
 
-
----
-
-## ⚙️ Prerequisites
-
-Make sure you have:
+## ✅ Prerequisites
 
 - Node.js
 - Python 3.x
-- MongoDB (Local / Atlas)
+- MongoDB (local or Atlas)
 - Cloudinary account
 
----
+## 🚀 Quick start
 
-## 🛠️ Setup Instructions
-## ⚙️ Setup Instructions
-
-### 1️⃣ Backend Setup (Flask)
+### 1) Backend (Flask)
 
 ```bash
 python -m venv .venv
 
-# Activate environment (Windows PowerShell)
-.\.venv\Scripts\Activate.ps1
+# Windows PowerShell
+\.\.venv\Scripts\Activate.ps1
 
 pip install flask python-dotenv pymongo pillow cloudinary deepface numpy itsdangerous werkzeug
 ```
 
-Create a `.env` file inside `Backend/`:
+Create `Backend/.env`:
 
 ```env
-FLASK_SECRET_KEY=your-secret-key
+FLASK_SECRET_KEY=your-secret
 MONGO_CONNECTION_STRING=mongodb://...
 
 CLOUDINARY_CLOUD_NAME=...
 CLOUDINARY_API_KEY=...
 CLOUDINARY_API_SECRET=...
 
-ADMIN_SECRET_KEY=your-admin-secret
+# Required for ADMIN signup + admin-only enroll
+ADMIN_SECRET_KEY=...
+
+# Matching (optional)
+# score is cosine similarity clamped to [0, 1]
+MATCH_THRESHOLD=0.5
+
+# DeepFace (optional)
+FACE_MODEL=Facenet512
+FACE_DETECTOR=retinaface
+ENFORCE_DETECTION=true
+EMBEDDING_TIMEOUT_SECONDS=180
 ```
 
 Run backend:
@@ -121,11 +91,9 @@ cd Backend
 python app.py
 ```
 
-📍 Backend runs on: `http://localhost:8000`
+Backend runs at `http://localhost:8000`.
 
----
-
-### 2️⃣ Frontend Setup (React + Vite)
+### 2) Frontend (React + Vite)
 
 ```bash
 cd Frontend
@@ -133,112 +101,52 @@ npm install
 npm run dev
 ```
 
-📍 Frontend runs on: `http://localhost:5173`
+Frontend runs at `http://localhost:5173`.
 
-⚠️ **Note:** Backend URL is currently hardcoded to `http://localhost:8000`
+Important: the frontend currently calls the backend at `http://localhost:8000`.
 
----
-
-## 🔐 Admin Access Setup
+## 🔐 Admin access
 
 To create an admin user:
 
-1. Add `ADMIN_SECRET_KEY` in `.env`
-2. Go to Signup page
-3. Select role `ADMIN`
-4. Enter the secret key
-5. Login → Access `/upload` page
+1) Set `ADMIN_SECRET_KEY` in `Backend/.env`
+2) Open Signup
+3) Select role `ADMIN` and enter the same secret
+4) Login → access `/upload`
 
----
+## 🔌 Backend API
 
-## 🔌 API Endpoints
+- `POST /api/auth/signup` — `{ name, email, password, role, adminSecret? }`
+- `POST /api/auth/login` — `{ email, password }` → `{ token, user }`
+- `POST /api/enroll` — multipart form (**ADMIN only**, requires `Authorization: Bearer <token>`)
+- `POST /api/upload` — multipart form (requires `Authorization: Bearer <token>`)
+- `GET /api/members?name=...&sex=...` (requires `Authorization: Bearer <token>`)
+- `GET /api/latest-criminals?limit=10&status=...`
 
-### Authentication
+`POST /api/upload` (multipart fields)
 
-```http
-POST /api/auth/signup
-POST /api/auth/login
-```
+- `image` (file) — required
+- `sex_filter` (string) — optional
+- `include_candidates` ("1"/"true") — optional; if no match clears `MATCH_THRESHOLD`, return the top scored candidates anyway
 
-### Face Enrollment & Upload
+## 🧠 Notes on matching
 
-```http
-POST /api/enroll       (ADMIN only)
-POST /api/upload
-```
-
-### Member Search
-
-```http
-GET /api/members?name=&sex=
-GET /api/latest-criminals?limit=10&status=
-```
-
----
-
-## 🧠 How Face Matching Works
-
-1. Image is uploaded
-2. DeepFace generates embedding vector
-3. Compare with database embeddings
-4. Use cosine similarity to find closest match
-
----
+- Score is cosine similarity clamped to `[0, 1]` (higher = more similar).
+- Tune strictness using `MATCH_THRESHOLD` in `Backend/.env`.
+- Generated (canvas) faces are not real photos. The app pre-processes generated images before searching (white background + upscale), but photo-to-composite matching can still be harder than photo-to-photo matching.
 
 ## 🧰 Utilities
 
-Inspect database records:
+Inspect MongoDB records:
 
 ```bash
 cd Backend
 python db_inspect.py
 ```
 
----
-
 ## 🩺 Troubleshooting
 
-### ❌ Login shows "Server Error"
-
-* Ensure backend is running on port `8000`
-
-### ❌ CORS Issues
-
-* Backend allows ports `5173–5180`
-
-### ❌ Face Matching Not Working
-
-* Use clear, front-facing images
-* Wait for model warm-up (1–2 minutes)
-
----
-
-## 📌 Future Improvements
-
-* 🔄 Real-time face detection (Webcam)
-* 📊 Dashboard analytics for crime data
-* ⚡ Faster embeddings using GPU
-* 🧠 Switch to InsightFace for better accuracy
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome!
-
-1. Fork the repository
-2. Create a new branch
-3. Submit a Pull Request
-
----
-
-## 📜 License
-
-This project is licensed under the **MIT License**
-
----
-
-## 👨‍💻 Author
-
-**Anshul Rajpoot**
-MANIT Bhopal | ECE
+- **Login shows “Server error”**: ensure backend is running on `http://localhost:8000`.
+- **CORS errors**: backend allows Vite localhost ports `5173–5180`.
+- **Embedding extraction fails**: try a clear, front‑facing face image; models may take 1–2 minutes to warm up after server start.
+- **Generated face returns “No matches”**: expected if your DB contains real photos and the generated face is stylized; try tuning `MATCH_THRESHOLD` or use `include_candidates`.

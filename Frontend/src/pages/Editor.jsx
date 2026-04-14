@@ -58,6 +58,34 @@ export default function Editor() {
     return new Blob([buf], { type: mime });
   };
 
+  const dataUrlToSearchFile = async (dataUrl) => {
+    const img = new Image();
+    img.src = dataUrl;
+    img.crossOrigin = "anonymous";
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+    });
+
+    const size = 512;
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, size, size);
+
+    const scale = Math.min(size / img.width, size / img.height);
+    const dw = Math.round(img.width * scale);
+    const dh = Math.round(img.height * scale);
+    const dx = Math.round((size - dw) / 2);
+    const dy = Math.round((size - dh) / 2);
+    ctx.drawImage(img, dx, dy, dw, dh);
+
+    const blob = await new Promise((resolve) => c.toBlob(resolve, "image/jpeg", 0.95));
+    return new File([blob], `generated-${Date.now()}.jpg`, { type: blob.type || "image/jpeg" });
+  };
+
   const uploadImageForMatch = async (file) => {
     if (!file) return;
     if (!token) {
@@ -67,6 +95,7 @@ export default function Editor() {
 
     const formData = new FormData();
     formData.append("image", file);
+    formData.append("include_candidates", "1");
 
     try {
       setMatchLoading(true);
@@ -133,10 +162,7 @@ export default function Editor() {
       showToast("Generate the image first", "warning");
       return;
     }
-    const blob = dataUrlToBlob(generatedImageUrl);
-    const file = new File([blob], `generated-${Date.now()}.png`, {
-      type: "image/png",
-    });
+    const file = await dataUrlToSearchFile(generatedImageUrl);
     await uploadImageForMatch(file);
   };
 

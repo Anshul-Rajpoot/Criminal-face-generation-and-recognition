@@ -45,7 +45,10 @@ cloudinary.config(
 )
 
 # SETTINGS
-THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.6"))
+# NOTE: Previous versions mapped cosine similarity from [-1, 1] to [0, 1],
+# which makes unrelated images cluster around ~0.5. We now use a true
+# similarity score where unrelated is closer to 0.
+THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.5"))
 MODEL = os.getenv("FACE_MODEL", "Facenet512")
 DETECTOR = os.getenv("FACE_DETECTOR", "retinaface")
 ENFORCE = os.getenv("ENFORCE_DETECTION", "true").lower() in {"1", "true", "yes"}
@@ -129,7 +132,18 @@ def require_auth(required_role=None):
 # UTIL FUNCTIONS
 # ==============================
 def file_to_numpy(file_bytes):
-    return np.array(Image.open(io.BytesIO(file_bytes)).convert("RGB"))
+    img = Image.open(io.BytesIO(file_bytes))
+
+    # Canvas-generated PNGs often have transparency; converting RGBA->RGB directly
+    # composites against black and hurts face detection/embeddings.
+    if img.mode in {"RGBA", "LA"} or (img.mode == "P" and "transparency" in img.info):
+        img = img.convert("RGBA")
+        bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
+        img = Image.alpha_composite(bg, img).convert("RGB")
+    else:
+        img = img.convert("RGB")
+
+    return np.array(img)
 
 
 def compute_embedding_worker(file_bytes):
@@ -235,9 +249,17 @@ def upload_image(file_bytes):
 
 
 def cosine_score(a, b):
-    a = np.array(a)
-    b = np.array(b)
-    return (np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)) + 1) / 2
+    a = np.asarray(a, dtype=np.float32)
+    b = np.asarray(b, dtype=np.float32)
+    denom = float(np.linalg.norm(a) * np.linalg.norm(b))
+    if denom == 0.0:
+        return 0.0
+
+    # Cosine similarity in [-1, 1]. Clamp then convert to a [0, 1] score
+    # where "no match" is near 0.
+    cos = float(np.dot(a, b) / denom)
+    cos = max(-1.0, min(1.0, cos))
+    return max(0.0, cos)
 
 
 # ==============================
@@ -335,7 +357,9 @@ def api_upload_and_match():
     if sex_filter:
         mongo_query["sex"] = sex_filter
 
-    results = []
+    include_candidates = (request.form.get("include_candidates") or "").strip() in {"1", "true", "yes"}
+
+    scored = []
     for doc in collection.find(mongo_query):
         if "embedding" not in doc:
             continue
@@ -345,21 +369,25 @@ def api_upload_and_match():
         except Exception:
             continue
 
-        if score >= THRESHOLD:
-            results.append(
-                {
-                    "name": doc.get("name"),
-                    "age": doc.get("age"),
-                    "sex": doc.get("sex"),
-                    "crime": doc.get("crime"),
-                    "status": doc.get("status"),
-                    "imageURL": doc.get("imageURL"),
-                    "score": float(score),
-                }
-            )
+        scored.append(
+            {
+                "name": doc.get("name"),
+                "age": doc.get("age"),
+                "sex": doc.get("sex"),
+                "crime": doc.get("crime"),
+                "status": doc.get("status"),
+                "imageURL": doc.get("imageURL"),
+                "score": float(score),
+            }
+        )
 
-    results.sort(key=lambda x: x["score"], reverse=True)
-    return jsonify({"matches": results[:6]}), 200
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    passed = [r for r in scored if r["score"] >= THRESHOLD]
+    if passed:
+        return jsonify({"matches": passed[:6]}), 200
+    if include_candidates:
+        return jsonify({"matches": scored[:6]}), 200
+    return jsonify({"matches": []}), 200
 
 
 @app.route("/api/enroll", methods=["POST", "OPTIONS"])

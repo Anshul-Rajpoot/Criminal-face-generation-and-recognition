@@ -12,6 +12,39 @@ function dataUrlToFile(dataUrl, filename) {
   return new File([blob], filename, { type: mime });
 }
 
+async function dataUrlToSearchFile(dataUrl, filename) {
+  // Make the generated image more compatible with face-recognition models:
+  // - remove transparency by drawing on a white background
+  // - upscale to a square canvas so the face occupies more pixels
+  const img = new Image();
+  img.src = dataUrl;
+  img.crossOrigin = "anonymous";
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = reject;
+  });
+
+  const size = 512;
+  const c = document.createElement("canvas");
+  c.width = size;
+  c.height = size;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, size, size);
+
+  const scale = Math.min(size / img.width, size / img.height);
+  const dw = Math.round(img.width * scale);
+  const dh = Math.round(img.height * scale);
+  const dx = Math.round((size - dw) / 2);
+  const dy = Math.round((size - dh) / 2);
+  ctx.drawImage(img, dx, dy, dw, dh);
+
+  const blob = await new Promise((resolve) =>
+    c.toBlob(resolve, "image/jpeg", 0.95),
+  );
+  return new File([blob], filename, { type: blob.type || "image/jpeg" });
+}
+
 export default function Results() {
   const location = useLocation();
   const API_BASE = useMemo(() => "http://localhost:8000", []);
@@ -53,7 +86,7 @@ export default function Results() {
     }
 
     const imageFile = generatedImageUrl
-      ? dataUrlToFile(generatedImageUrl, `generated-${Date.now()}.png`)
+      ? await dataUrlToSearchFile(generatedImageUrl, `generated-${Date.now()}.jpg`)
       : null;
 
     if (!imageFile) {
@@ -64,6 +97,9 @@ export default function Results() {
     const formData = new FormData();
     formData.append("image", imageFile);
     if (gender && gender !== "Any") formData.append("sex_filter", gender);
+    // If the generated image doesn't clear the strict threshold, still return the
+    // best candidates so the user can iterate.
+    formData.append("include_candidates", "1");
 
     try {
       setLoading(true);

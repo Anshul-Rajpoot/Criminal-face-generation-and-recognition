@@ -52,6 +52,7 @@ export default function CanvasArea({
         className={styles.genderSelect  }
         value={gender}
         onChange={(e) => onGenderChange?.(e.target.value)}
+        
       >
         <option value="Any">Any</option>
         <option value="Male">Male</option>
@@ -130,7 +131,7 @@ export default function CanvasArea({
         </div>
       )}
 
-      <div className={styles.transform}>
+      {/* <div className={styles.transform}>
         <label className={styles.label}> Rotate </label>
         <input
           type="range"
@@ -161,7 +162,7 @@ export default function CanvasArea({
           className={styles.slider}
           onChange={(e) => onMoveY(parseFloat(e.target.value))}
         />
-      </div>
+      </div> */}
 
       {Array.isArray(matches) && matches.length > 0 && (
         <div className={styles.results}>
