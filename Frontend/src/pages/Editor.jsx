@@ -141,6 +141,11 @@ export default function Editor() {
   };
 
   const goToUploadForm = () => {
+    const role = localStorage.getItem("role");
+    if (role !== "ADMIN") {
+      showToast("Only admins can upload data to the database", "warning");
+      return;
+    }
     navigate("/upload");
   };
 

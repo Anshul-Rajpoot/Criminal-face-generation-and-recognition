@@ -54,7 +54,7 @@ Full‑stack college project for enrolling “criminal” profiles with face emb
 
 - `POST /api/auth/signup` — `{ name, email, password, role, adminSecret? }`
 - `POST /api/auth/login` — `{ email, password }` → `{ token, user }`
-- `POST /api/enroll` — multipart form (requires Bearer token)
+- `POST /api/enroll` — multipart form (**ADMIN only**, requires Bearer token)
 - `POST /api/upload` — multipart form (requires Bearer token)
 - `GET /api/members?name=...&sex=...` (requires Bearer token)
 - `GET /api/latest-criminals?limit=10&status=...`
@@ -85,6 +85,12 @@ Important: the frontend is currently hard-coded to use `http://localhost:8000` a
 1) Start MongoDB and ensure `MONGO_CONNECTION_STRING` is set.
 2) Start backend on port `8000`.
 3) Start frontend on port `5173`.
+
+## Access Control (Admin-only uploads)
+
+- Uploading/enrolling new criminal data into the database is restricted to `ADMIN` users.
+- To create an admin account, set `ADMIN_SECRET_KEY` in `Backend/.env` and choose role `ADMIN` on the Signup page.
+- The legacy Flask HTML form at `/` also requires the same `ADMIN_SECRET_KEY` value to enroll records.
 
 ## Troubleshooting
 

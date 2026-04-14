@@ -363,7 +363,7 @@ def api_upload_and_match():
 
 
 @app.route("/api/enroll", methods=["POST", "OPTIONS"])
-@require_auth()
+@require_auth(required_role="ADMIN")
 def api_enroll():
     if request.method == "OPTIONS":
         return ("", 204)
@@ -499,6 +499,17 @@ def index():
 @app.post("/enroll")
 def enroll():
     data = request.form
+
+    admin_secret_required = os.getenv("ADMIN_SECRET_KEY")
+    if not admin_secret_required:
+        flash("❌ Enrollment disabled. Set ADMIN_SECRET_KEY in your .env to enable admin-only enrollment.", "error")
+        return redirect(url_for("index"))
+
+    provided_secret = (data.get("adminSecret") or "").strip()
+    if provided_secret != admin_secret_required:
+        flash("❌ Invalid admin secret key", "error")
+        return redirect(url_for("index"))
+
     file = request.files.get("image")
 
     if not file:

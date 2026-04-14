@@ -5,13 +5,17 @@ import styles from "./AppHeader.module.css";
 export default function AppHeader() {
   const navigate = useNavigate();
   const [token, setToken] = useState(() => localStorage.getItem("token"));
+  const [role, setRole] = useState(() => localStorage.getItem("role"));
   const uploadMatchRef = useRef(null);
 
   const [searchName, setSearchName] = useState("");
   const [searchSex, setSearchSex] = useState("Any");
 
   useEffect(() => {
-    const sync = () => setToken(localStorage.getItem("token"));
+    const sync = () => {
+      setToken(localStorage.getItem("token"));
+      setRole(localStorage.getItem("role"));
+    };
     window.addEventListener("authchange", sync);
     window.addEventListener("storage", sync);
     return () => {
@@ -153,13 +157,15 @@ export default function AppHeader() {
                 Search Image
               </button>
 
-              <button
-                type="button"
-                className={styles.actionBtn}
-                onClick={() => navigate("/upload")}
-              >
-                Upload Image
-              </button>
+              {role === "ADMIN" && (
+                <button
+                  type="button"
+                  className={styles.actionBtn}
+                  onClick={() => navigate("/upload")}
+                >
+                  Upload Image
+                </button>
+              )}
 
               <button type="button" className={styles.actionBtn} onClick={logout}>
                 Logout

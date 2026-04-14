@@ -51,7 +51,7 @@ export default function App() {
           <Route
             path="/upload"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute requiredRole="ADMIN">
                 <AdminUpload />
               </ProtectedRoute>
             }
