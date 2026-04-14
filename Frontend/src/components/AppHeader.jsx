@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import styles from "./AppHeader.module.css";
 
 export default function AppHeader() {
@@ -91,14 +91,14 @@ export default function AppHeader() {
   return (
     <header className={styles.header}>
       <div className={styles.inner}>
-        <div className={styles.left}>
+        <Link to="/" className={styles.leftLink} aria-label="Go to home">
           <img
             src="/assets/logo.png"
             className={styles.logo}
             alt="Face Generator Logo"
           />
           <h1 className={styles.title}>Face Generator</h1>
-        </div>
+        </Link>
 
         {token ? (
           <form className={styles.search} onSubmit={runMemberSearch}>

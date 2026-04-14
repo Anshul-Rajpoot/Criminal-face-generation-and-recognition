@@ -13,6 +13,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+
         <Route element={<AppLayout />}>
           <Route
             path="/"
@@ -22,8 +25,6 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
           <Route
             path="/app"
             element={
