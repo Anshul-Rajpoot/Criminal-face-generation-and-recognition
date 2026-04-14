@@ -1,0 +1,11 @@
+flask
+python-dotenv
+pymongo
+pillow
+cloudinary
+deepface
+numpy
+itsdangerous
+werkzeug
+gunicorn
+flask-cors
