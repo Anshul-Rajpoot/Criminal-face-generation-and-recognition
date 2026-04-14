@@ -4,8 +4,11 @@ python-dotenv
 pymongo
 pillow
 cloudinary
-deepface
 numpy
 itsdangerous
 werkzeug
 gunicorn
+
+# 🔥 IMPORTANT
+tensorflow==2.12.0
+deepface==0.0.79
