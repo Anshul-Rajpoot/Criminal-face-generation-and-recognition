@@ -1,3 +1,7 @@
+@app.route("/test")
+def test():
+    return "Backend working"
+
 import io
 import os
 import numpy as np
