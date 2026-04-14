@@ -1,4 +1,5 @@
 flask
+flask-cors
 python-dotenv
 pymongo
 pillow
@@ -8,4 +9,3 @@ numpy
 itsdangerous
 werkzeug
 gunicorn
-flask-cors
