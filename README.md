@@ -1,99 +1,132 @@
 # Criminal Face Generation & Recognition
 
-Full‑stack college project for enrolling “criminal” profiles with face embeddings and matching a query face against stored profiles.
+<p align="center">
+  <img src="Frontend/public/assets/logo.png" alt="Project logo" width="240" />
+</p>
 
-## Project Structure
+<p align="center">
+  A full‑stack web app that generates a composite face (by layering facial assets), then performs face matching against enrolled profiles stored in MongoDB.
+</p>
 
-- `Backend/` — Flask API + simple HTML page, MongoDB storage, Cloudinary image uploads
-- `Frontend/` — React (Vite) UI that talks to the Flask API
+## ✨ What this project does
 
-## Prerequisites
+- **Face generation (frontend editor)**: build a face by combining hair/eyes/nose/etc. assets on a canvas.
+- **Face search**: upload an image (or a generated face) and find the closest matches in the database.
+- **Criminal profile enrollment (admin-only)**: add a profile + image, generate face embeddings, store everything in MongoDB.
+- **Member search**: search enrolled profiles by name (and optional sex filter).
+- **Role-based access control**: only `ADMIN` users can upload/enroll into the database.
+
+## 🧱 Tech stack
+
+- **Frontend**: React + Vite
+- **Backend**: Flask
+- **Database**: MongoDB (local or Atlas)
+- **Face embeddings / matching**: DeepFace (embeddings) + cosine similarity
+- **Image hosting**: Cloudinary
+
+## 📁 Repository layout
+
+```text
+Backend/
+  app.py
+  db_inspect.py
+  templates/
+    index.html
+Frontend/
+  src/
+  public/
+  package.json
+```
+
+## ✅ Prerequisites
 
 - Node.js (for the React frontend)
 - Python 3.x (for the Flask backend)
 - MongoDB (local or Atlas)
-- Cloudinary account (for image hosting)
+- Cloudinary account (for image uploads)
 
-## Backend Setup (Flask)
+## 🚀 Quick start (recommended order)
 
-1) Create a Python environment and install dependencies.
+### 1) Backend (Flask)
 
-	Example (venv):
-	- `python -m venv .venv`
-	- Windows PowerShell: `.\.venv\Scripts\Activate.ps1`
-	- `pip install flask python-dotenv pymongo pillow cloudinary deepface numpy itsdangerous werkzeug`
+Install dependencies (example):
 
-	Notes:
-	- `deepface` may take time to install the first time and can pull in additional ML dependencies.
-	- If embeddings fail right after server start, try again after 1–2 minutes (model warm-up).
+```bash
+python -m venv .venv
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
 
-2) Create a `Backend/.env` file (or set these variables in your shell):
+pip install flask python-dotenv pymongo pillow cloudinary deepface numpy itsdangerous werkzeug
+```
 
-	- `FLASK_SECRET_KEY=your-secret`
-	- `MONGO_CONNECTION_STRING=mongodb://...` (or Atlas connection string)
-	- `CLOUDINARY_CLOUD_NAME=...`
-	- `CLOUDINARY_API_KEY=...`
-	- `CLOUDINARY_API_SECRET=...`
+Create environment file: `Backend/.env`
 
-	Optional:
-	- `ADMIN_SECRET_KEY=...` (required to sign up an ADMIN user)
-	- `MATCH_THRESHOLD=0.6`
-	- `FACE_MODEL=Facenet512`
-	- `FACE_DETECTOR=retinaface`
-	- `ENFORCE_DETECTION=true`
-	- `EMBEDDING_TIMEOUT_SECONDS=180`
+```env
+FLASK_SECRET_KEY=your-secret
+MONGO_CONNECTION_STRING=mongodb://...
 
-3) Run the backend:
+CLOUDINARY_CLOUD_NAME=...
+CLOUDINARY_API_KEY=...
+CLOUDINARY_API_SECRET=...
 
-	- `cd Backend`
-	- `python app.py`
+# Required for ADMIN signup + admin-only enroll
+ADMIN_SECRET_KEY=...
+```
 
-	Server runs on: `http://localhost:8000`
+Run the server:
 
-### Backend Endpoints (used by the Frontend)
+```bash
+cd Backend
+python app.py
+```
+
+Backend runs at `http://localhost:8000`.
+
+### 2) Frontend (React + Vite)
+
+```bash
+cd Frontend
+npm install
+npm run dev
+```
+
+Frontend runs at `http://localhost:5173`.
+
+Important: the frontend currently calls the backend at **`http://localhost:8000`** (hard-coded in the UI pages).
+
+## 🔐 Access control (Admin-only uploads)
+
+Uploading/enrolling new profiles into the database is restricted to **ADMIN** users.
+
+How to create an admin user:
+
+1) Set `ADMIN_SECRET_KEY` in `Backend/.env`
+2) Open the Signup page in the frontend
+3) Choose role `ADMIN` and enter the same Admin Secret Key
+4) Login as that admin — the `/upload` page becomes accessible
+
+The legacy Flask HTML form (served at `/`) also requires the Admin Secret Key when enrolling.
+
+## 🔌 Backend API (used by the Frontend)
 
 - `POST /api/auth/signup` — `{ name, email, password, role, adminSecret? }`
 - `POST /api/auth/login` — `{ email, password }` → `{ token, user }`
-- `POST /api/enroll` — multipart form (**ADMIN only**, requires Bearer token)
-- `POST /api/upload` — multipart form (requires Bearer token)
-- `GET /api/members?name=...&sex=...` (requires Bearer token)
+- `POST /api/enroll` — multipart form (**ADMIN only**, requires `Authorization: Bearer <token>`)
+- `POST /api/upload` — multipart form (requires `Authorization: Bearer <token>`)
+- `GET /api/members?name=...&sex=...` (requires `Authorization: Bearer <token>`)
 - `GET /api/latest-criminals?limit=10&status=...`
 
-### Optional Utilities
+## 🧰 Utilities
 
-- Inspect MongoDB records:
-  - `cd Backend`
-  - `python db_inspect.py`
+Inspect MongoDB records:
 
-## Frontend Setup (React + Vite)
+```bash
+cd Backend
+python db_inspect.py
+```
 
-1) Install dependencies:
+## 🩺 Troubleshooting
 
-- `cd Frontend`
-- `npm install`
-
-2) Run the dev server:
-
-- `npm run dev`
-
-Frontend runs on: `http://localhost:5173`
-
-Important: the frontend is currently hard-coded to use `http://localhost:8000` as the backend base URL.
-
-## Typical Dev Workflow
-
-1) Start MongoDB and ensure `MONGO_CONNECTION_STRING` is set.
-2) Start backend on port `8000`.
-3) Start frontend on port `5173`.
-
-## Access Control (Admin-only uploads)
-
-- Uploading/enrolling new criminal data into the database is restricted to `ADMIN` users.
-- To create an admin account, set `ADMIN_SECRET_KEY` in `Backend/.env` and choose role `ADMIN` on the Signup page.
-- The legacy Flask HTML form at `/` also requires the same `ADMIN_SECRET_KEY` value to enroll records.
-
-## Troubleshooting
-
-- **“Backend not reachable”**: confirm Flask is running on `http://localhost:8000`.
-- **CORS errors**: backend allows localhost Vite ports (5173–5180). Make sure you are using a localhost URL.
-- **Embedding extraction fails**: use a clear, front-facing face image; try again after warm-up.
+- **Login shows “Server error”**: ensure the backend is running on `http://localhost:8000`.
+- **CORS errors**: backend allows Vite localhost ports `5173–5180`.
+- **Embedding extraction fails**: try a clear, front‑facing image; ML models may take 1–2 minutes to warm up after server start.
