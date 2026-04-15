@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE_URL = https://criminal-face-generation-and-recognition.onrender.com ;
+const DEFAULT_API_BASE_URL = "https://criminal-face-generation-and-recognition.onrender.com" ;
 
 function normalizeBaseUrl(url) {
   return String(url || DEFAULT_API_BASE_URL).replace(/\/+$/, "");
