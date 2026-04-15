@@ -53,7 +53,7 @@ cloudinary.config(
 # ==============================
 # SETTINGS
 # ==============================
-THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.5"))
+THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.2"))
 MODEL = os.getenv("FACE_MODEL", "Facenet512")
 DETECTOR = os.getenv("FACE_DETECTOR", "retinaface")
 ENFORCE = os.getenv("ENFORCE_DETECTION", "true").lower() in {"1", "true", "yes"}
