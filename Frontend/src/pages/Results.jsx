@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
+import { apiUrl } from "../utils/api.js";
 import styles from "./Results.module.css";
 
 function dataUrlToFile(dataUrl, filename) {
@@ -47,7 +48,6 @@ async function dataUrlToSearchFile(dataUrl, filename) {
 
 export default function Results() {
   const location = useLocation();
-  const API_BASE = useMemo(() => "http://localhost:8000", []);
 
   const [generatedImageUrl, setGeneratedImageUrl] = useState(() => {
     return (
@@ -103,7 +103,7 @@ export default function Results() {
 
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/api/upload`, {
+      const res = await fetch(apiUrl("/api/upload"), {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,

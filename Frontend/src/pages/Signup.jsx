@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { apiUrl } from "../utils/api.js";
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -26,7 +27,7 @@ export default function Signup() {
       const payload =
         form.role === "ADMIN" ? form : { ...form, adminSecret: undefined };
 
-      const res = await fetch("http://localhost:8000/api/auth/signup", {
+      const res = await fetch(apiUrl("/api/auth/signup"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AssetPanel from "../components/AssetPanel.jsx";
 import CanvasArea from "../components/CanvasArea.jsx";
@@ -6,13 +6,13 @@ import LayersPanel from "../components/LayersPanel.jsx";
 import Toast from "../components/Toast.jsx";
 import { useCanvas } from "../hooks/useCanvas.js";
 import { useToast } from "../hooks/useToast.js";
+import { apiUrl } from "../utils/api.js";
 import styles from "./Editor.module.css";
 
 export default function Editor() {
   const { toasts, showToast } = useToast();
   const navigate = useNavigate();
 
-  const API_BASE = useMemo(() => "http://localhost:8000", []);
   const token = localStorage.getItem("token");
 
   const [generatedImageUrl, setGeneratedImageUrl] = useState(null);
@@ -99,7 +99,7 @@ export default function Editor() {
 
     try {
       setMatchLoading(true);
-      const res = await fetch(`${API_BASE}/api/upload`, {
+      const res = await fetch(apiUrl("/api/upload"), {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,

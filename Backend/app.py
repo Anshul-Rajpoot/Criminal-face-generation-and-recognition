@@ -33,7 +33,13 @@ _token_serializer = URLSafeTimedSerializer(app.secret_key, salt="auth")
 TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 7
 
 # MongoDB
-client = MongoClient(os.getenv("MONGO_CONNECTION_STRING"))
+MONGO_CONNECTION_STRING = os.getenv("MONGO_CONNECTION_STRING")
+if not MONGO_CONNECTION_STRING:
+    raise RuntimeError(
+        "Missing required env var MONGO_CONNECTION_STRING (set it in Render/Vercel env or Backend/.env for local dev)"
+    )
+
+client = MongoClient(MONGO_CONNECTION_STRING)
 db = client["face_recognition_db"]
 collection = db["criminals"]
 users_collection = db["users"]
@@ -56,7 +62,7 @@ ENFORCE = os.getenv("ENFORCE_DETECTION", "true").lower() in {"1", "true", "yes"}
 TIMEOUT = int(os.getenv("EMBEDDING_TIMEOUT_SECONDS", "180"))
 
 # Frontend origins (Vite)
-ALLOWED_ORIGINS = {
+_DEFAULT_ALLOWED_ORIGINS = {
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:5174",
@@ -64,10 +70,25 @@ ALLOWED_ORIGINS = {
 }
 
 
+def _parse_allowed_origins() -> set[str]:
+    raw = os.getenv("CORS_ALLOWED_ORIGINS", "")
+    extra = {o.strip() for o in raw.split(",") if o.strip()}
+    return _DEFAULT_ALLOWED_ORIGINS | extra
+
+
+ALLOWED_ORIGINS = _parse_allowed_origins()
+ALLOW_ANY_VERCEL_APP = os.getenv("CORS_ALLOW_VERCEL_APP", "false").lower() in {"1", "true", "yes"}
+
+
 def _is_allowed_origin(origin: str | None) -> bool:
     if not origin:
         return False
     if origin in ALLOWED_ORIGINS:
+        return True
+
+    # Production convenience: allow Vercel preview + production URLs.
+    # Prefer setting explicit origins in CORS_ALLOWED_ORIGINS.
+    if ALLOW_ANY_VERCEL_APP and origin.startswith("https://") and origin.endswith(".vercel.app"):
         return True
 
     # Dev convenience: Vite can auto-switch ports if 5173 is occupied.
@@ -92,6 +113,11 @@ def add_cors_headers(resp):
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return resp
+
+
+@app.get("/api/health")
+def api_health():
+    return jsonify({"status": "ok"}), 200
 
 
 def _issue_token(email, role):
@@ -636,4 +662,6 @@ def search():
 # RUN
 # ==============================
 if __name__ == "__main__":
-    app.run(debug=True, port=8000, use_reloader=False)
+    debug = os.getenv("FLASK_DEBUG", "false").lower() in {"1", "true", "yes"}
+    port = int(os.getenv("PORT", "8000"))
+    app.run(host="0.0.0.0", debug=debug, port=port, use_reloader=False)

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { apiUrl } from "../utils/api.js";
 
 export default function AdminUpload() {
   const [form, setForm] = useState({
@@ -39,7 +40,7 @@ export default function AdminUpload() {
     try {
       setLoading(true);
 
-      const res = await fetch("http://localhost:8000/api/enroll", {
+      const res = await fetch(apiUrl("/api/enroll"), {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,

@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { apiUrl } from "../utils/api.js";
 import styles from "./Home.module.css";
 
 export default function Home() {
-  const API_BASE = useMemo(() => "http://localhost:8000", []);
-
   const [criminals, setCriminals] = useState([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [fadeIn, setFadeIn] = useState(true);
@@ -14,7 +13,7 @@ export default function Home() {
   useEffect(() => {
     const run = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/latest-criminals?limit=10`);
+        const res = await fetch(apiUrl("/api/latest-criminals?limit=10"));
         const data = await res.json();
 
         if (!res.ok) {
@@ -29,7 +28,7 @@ export default function Home() {
     };
 
     run();
-  }, [API_BASE]);
+  }, []);
 
   useEffect(() => {
     if (!criminals.length) return;

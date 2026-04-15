@@ -39,3 +39,6 @@ ENV/
 # Local databases (generated)
 *.sqlite3
 *.db
+
+# Do not commit README (per deployment/push request)
+README.md

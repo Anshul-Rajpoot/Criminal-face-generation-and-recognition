@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { API_BASE_URL } from "../utils/api.js";
 import styles from "./Members.module.css";
 
 export default function Members() {
-  const API_BASE = useMemo(() => "http://localhost:8000", []);
   const [params] = useSearchParams();
 
   const name = (params.get("name") || "").trim();
@@ -28,7 +28,7 @@ export default function Members() {
         setLoading(true);
         setError("");
 
-        const url = new URL(`${API_BASE}/api/members`);
+        const url = new URL(`${API_BASE_URL}/api/members`);
         url.searchParams.set("name", name);
         if (sex) url.searchParams.set("sex", sex);
 
@@ -61,7 +61,7 @@ export default function Members() {
     };
 
     run();
-  }, [API_BASE, name, sex]);
+  }, [name, sex]);
 
   return (
     <div className={styles.page}>
