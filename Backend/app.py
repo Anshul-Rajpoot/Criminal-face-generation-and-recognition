@@ -1,3 +1,4 @@
+```python
 import io
 import os
 import numpy as np
@@ -9,14 +10,13 @@ from concurrent.futures import ProcessPoolExecutor, TimeoutError
 from concurrent.futures.process import BrokenProcessPool
 
 from dotenv import load_dotenv
-from flask import Flask, flash, redirect, render_template, request, url_for, jsonify, g
+from flask import Flask, request, jsonify, g
 from PIL import Image
 from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import cloudinary
 import cloudinary.uploader
-
 
 # ==============================
 # LOAD ENV
@@ -32,101 +32,62 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev")
 _token_serializer = URLSafeTimedSerializer(app.secret_key, salt="auth")
 TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 7
 
-# MongoDB
+# ==============================
+# DATABASE
+# ==============================
 MONGO_CONNECTION_STRING = os.getenv("MONGO_CONNECTION_STRING")
-if not MONGO_CONNECTION_STRING:
-    raise RuntimeError(
-        "Missing required env var MONGO_CONNECTION_STRING (set it in Render/Vercel env or Backend/.env for local dev)"
-    )
-
 client = MongoClient(MONGO_CONNECTION_STRING)
 db = client["face_recognition_db"]
 collection = db["criminals"]
 users_collection = db["users"]
 
-# Cloudinary
+# ==============================
+# CLOUDINARY
+# ==============================
 cloudinary.config(
     cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
     api_key=os.getenv("CLOUDINARY_API_KEY"),
     api_secret=os.getenv("CLOUDINARY_API_SECRET")
 )
 
+# ==============================
 # SETTINGS
-# NOTE: Previous versions mapped cosine similarity from [-1, 1] to [0, 1],
-# which makes unrelated images cluster around ~0.5. We now use a true
-# similarity score where unrelated is closer to 0.
+# ==============================
 THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.5"))
 MODEL = os.getenv("FACE_MODEL", "Facenet512")
 DETECTOR = os.getenv("FACE_DETECTOR", "retinaface")
 ENFORCE = os.getenv("ENFORCE_DETECTION", "true").lower() in {"1", "true", "yes"}
 TIMEOUT = int(os.getenv("EMBEDDING_TIMEOUT_SECONDS", "180"))
 
-# Frontend origins (Vite)
-_DEFAULT_ALLOWED_ORIGINS = {
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:5174",
-    "http://127.0.0.1:5174",
-}
-
-
-def _parse_allowed_origins() -> set[str]:
-    raw = os.getenv("CORS_ALLOWED_ORIGINS", "")
-    extra = {o.strip() for o in raw.split(",") if o.strip()}
-    return _DEFAULT_ALLOWED_ORIGINS | extra
-
-
-ALLOWED_ORIGINS = _parse_allowed_origins()
-ALLOW_ANY_VERCEL_APP = os.getenv("CORS_ALLOW_VERCEL_APP", "false").lower() in {"1", "true", "yes"}
-
-
-def _is_allowed_origin(origin: str | None) -> bool:
-    if not origin:
-        return False
-    if origin in ALLOWED_ORIGINS:
-        return True
-
-    # Production convenience: allow Vercel preview + production URLs.
-    # Prefer setting explicit origins in CORS_ALLOWED_ORIGINS.
-    if ALLOW_ANY_VERCEL_APP and origin.startswith("https://") and origin.endswith(".vercel.app"):
-        return True
-
-    # Dev convenience: Vite can auto-switch ports if 5173 is occupied.
-    # Allow a small port range on localhost/127.0.0.1.
-    m = re.match(r"^http://(localhost|127\.0\.0\.1):(\d+)$", origin)
-    if not m:
-        return False
-    try:
-        port = int(m.group(2))
-    except Exception:
-        return False
-    return 5173 <= port <= 5180
-
-
+# ==============================
+# CORS (simple)
+# ==============================
 @app.after_request
 def add_cors_headers(resp):
-    origin = request.headers.get("Origin")
-    if _is_allowed_origin(origin):
-        resp.headers["Access-Control-Allow-Origin"] = origin
-        resp.headers["Vary"] = "Origin"
-        resp.headers["Access-Control-Allow-Credentials"] = "true"
-        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return resp
 
+# ==============================
+# HEALTH
+# ==============================
+@app.get("/")
+def home():
+    return jsonify({"message": "API running"})
 
 @app.get("/api/health")
 def api_health():
     return jsonify({"status": "ok"}), 200
 
-
+# ==============================
+# AUTH HELPERS
+# ==============================
 def _issue_token(email, role):
     return _token_serializer.dumps({"email": email, "role": role})
 
-
 def _verify_token(token):
     return _token_serializer.loads(token, max_age=TOKEN_MAX_AGE_SECONDS)
-
 
 def require_auth(required_role=None):
     def decorator(fn):
@@ -134,534 +95,161 @@ def require_auth(required_role=None):
         def wrapper(*args, **kwargs):
             if request.method == "OPTIONS":
                 return ("", 204)
+
             auth = request.headers.get("Authorization", "")
             if not auth.startswith("Bearer "):
                 return jsonify({"message": "Missing token"}), 401
-            token = auth.split(" ", 1)[1].strip()
+
+            token = auth.split(" ", 1)[1]
             try:
                 payload = _verify_token(token)
-            except SignatureExpired:
-                return jsonify({"message": "Token expired"}), 401
-            except BadSignature:
-                return jsonify({"message": "Invalid token"}), 401
+            except:
+                return jsonify({"message": "Invalid/Expired token"}), 401
 
             if required_role and payload.get("role") != required_role:
                 return jsonify({"message": "Forbidden"}), 403
 
             g.user = payload
             return fn(*args, **kwargs)
-
         return wrapper
-
     return decorator
 
 # ==============================
-# UTIL FUNCTIONS
+# IMAGE + EMBEDDING
 # ==============================
 def file_to_numpy(file_bytes):
-    img = Image.open(io.BytesIO(file_bytes))
-
-    # Canvas-generated PNGs often have transparency; converting RGBA->RGB directly
-    # composites against black and hurts face detection/embeddings.
-    if img.mode in {"RGBA", "LA"} or (img.mode == "P" and "transparency" in img.info):
-        img = img.convert("RGBA")
-        bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
-        img = Image.alpha_composite(bg, img).convert("RGB")
-    else:
-        img = img.convert("RGB")
-
+    img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
     return np.array(img)
 
-
 def compute_embedding_worker(file_bytes):
-    """Runs inside subprocess (SAFE)"""
     try:
         from deepface import DeepFace
-
         img = file_to_numpy(file_bytes)
-
-        # First attempt: configured detector and enforcement
-        reps = []
-        try:
-            reps = DeepFace.represent(
-                img_path=img,
-                model_name=MODEL,
-                detector_backend=DETECTOR,
-                enforce_detection=ENFORCE,
-            )
-        except Exception as e:
-            try:
-                print("DeepFace represent primary failed:", repr(e))
-            except Exception:
-                pass
-            reps = []
-
-        # Fallback: relax detection (helps for low-res / non-photographic faces)
-        if not reps:
-            try:
-                reps = DeepFace.represent(
-                    img_path=img,
-                    model_name=MODEL,
-                    detector_backend="opencv",
-                    enforce_detection=False,
-                )
-            except Exception as e:
-                try:
-                    print("DeepFace represent fallback failed:", repr(e))
-                except Exception:
-                    pass
-                reps = []
-
-        if not reps:
-            try:
-                print("DeepFace returned no representations")
-            except Exception:
-                pass
-            return None
-
-        emb = np.array(reps[0]["embedding"], dtype=np.float32)
-        norm = float(np.linalg.norm(emb))
-        if norm == 0:
-            return None
-
-        emb = emb / norm
-        return emb.tolist()
-
-    except Exception as e:
-        # Keep worker robust; return None but log a hint to server stdout
-        try:
-            print("Embedding worker error:", repr(e))
-        except Exception:
-            pass
+        reps = DeepFace.represent(img_path=img, model_name=MODEL, enforce_detection=False)
+        emb = np.array(reps[0]["embedding"])
+        return (emb / np.linalg.norm(emb)).tolist()
+    except:
         return None
-
 
 _executor = None
 
-
-def get_executor():
+def get_embedding(file_bytes):
     global _executor
     if _executor is None:
-        ctx = multiprocessing.get_context("spawn")
-        _executor = ProcessPoolExecutor(max_workers=1, mp_context=ctx)
-    return _executor
+        _executor = ProcessPoolExecutor(max_workers=1)
 
-
-def get_embedding(file_bytes):
     try:
-        ex = get_executor()
-        fut = ex.submit(compute_embedding_worker, file_bytes)
-        return fut.result(timeout=TIMEOUT)
-
-    except TimeoutError:
-        print("Embedding timeout")
+        return _executor.submit(compute_embedding_worker, file_bytes).result(timeout=TIMEOUT)
+    except:
         return None
-
-    except BrokenProcessPool:
-        global _executor
-        if _executor:
-            _executor.shutdown(wait=False, cancel_futures=True)
-        _executor = None
-        print("Worker crashed, restarted")
-        return None
-
-    except Exception as e:
-        print("Embedding error:", e)
-        return None
-
 
 def upload_image(file_bytes):
-    result = cloudinary.uploader.upload(io.BytesIO(file_bytes))
-    return result["secure_url"]
-
+    return cloudinary.uploader.upload(io.BytesIO(file_bytes))["secure_url"]
 
 def cosine_score(a, b):
-    a = np.asarray(a, dtype=np.float32)
-    b = np.asarray(b, dtype=np.float32)
-    denom = float(np.linalg.norm(a) * np.linalg.norm(b))
-    if denom == 0.0:
-        return 0.0
-
-    # Cosine similarity in [-1, 1]. Clamp then convert to a [0, 1] score
-    # where "no match" is near 0.
-    cos = float(np.dot(a, b) / denom)
-    cos = max(-1.0, min(1.0, cos))
-    return max(0.0, cos)
-
+    a = np.array(a)
+    b = np.array(b)
+    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
 
 # ==============================
-# ROUTES
+# AUTH ROUTES
 # ==============================
-@app.route("/api/auth/signup", methods=["POST", "OPTIONS"])
-def api_signup():
-    if request.method == "OPTIONS":
-        return ("", 204)
-
-    data = request.get_json(silent=True) or {}
-    name = (data.get("name") or "").strip()
-    email = (data.get("email") or "").strip().lower()
-    password = data.get("password") or ""
-    role = (data.get("role") or "NORMAL").strip().upper()
-    admin_secret = data.get("adminSecret")
-
-    if not name or not email or not password:
-        return jsonify({"message": "Missing required fields"}), 400
-
-    if role not in {"NORMAL", "ADMIN"}:
-        return jsonify({"message": "Invalid role"}), 400
-
-    if role == "ADMIN":
-        required = os.getenv("ADMIN_SECRET_KEY")
-        if not required:
-            return (
-                jsonify({"message": "Admin signup is not configured"}),
-                400,
-            )
-        if admin_secret != required:
-            return jsonify({"message": "Invalid admin secret"}), 403
+@app.route("/api/auth/signup", methods=["POST"])
+def signup():
+    data = request.json
+    email = data["email"]
 
     if users_collection.find_one({"email": email}):
-        return jsonify({"message": "User already exists"}), 409
+        return jsonify({"message": "User exists"}), 409
 
-    users_collection.insert_one(
-        {
-            "name": name,
-            "email": email,
-            "passwordHash": generate_password_hash(password),
-            "role": role,
-            "createdAt": datetime.utcnow(),
-        }
-    )
+    users_collection.insert_one({
+        "email": email,
+        "passwordHash": generate_password_hash(data["password"]),
+        "role": data.get("role", "NORMAL")
+    })
 
-    return jsonify({"message": "Signup successful"}), 201
+    return jsonify({"message": "Signup success"})
 
+@app.route("/api/auth/login", methods=["POST"])
+def login():
+    data = request.json
+    user = users_collection.find_one({"email": data["email"]})
 
-@app.route("/api/auth/login", methods=["POST", "OPTIONS"])
-def api_login():
-    if request.method == "OPTIONS":
-        return ("", 204)
-
-    data = request.get_json(silent=True) or {}
-    email = (data.get("email") or "").strip().lower()
-    password = data.get("password") or ""
-
-    if not email or not password:
-        return jsonify({"message": "Missing email/password"}), 400
-
-    user = users_collection.find_one({"email": email})
-    if not user or not check_password_hash(user.get("passwordHash", ""), password):
+    if not user or not check_password_hash(user["passwordHash"], data["password"]):
         return jsonify({"message": "Invalid credentials"}), 401
 
-    role = user.get("role") or "NORMAL"
-    token = _issue_token(email=email, role=role)
-    return jsonify({"token": token, "user": {"role": role}}), 200
+    token = _issue_token(user["email"], user.get("role", "NORMAL"))
+    return jsonify({"token": token, "user": {"role": user.get("role")}})
 
-
-@app.route("/api/upload", methods=["POST", "OPTIONS"])
-@require_auth()
-def api_upload_and_match():
-    if request.method == "OPTIONS":
-        return ("", 204)
-
-    file = request.files.get("image")
-    if not file:
-        return jsonify({"error": "Please select an image"}), 400
-
-    file_bytes = file.read()
-    query_emb = get_embedding(file_bytes)
-    if query_emb is None:
-        return (
-            jsonify(
-                {
-                    "error": "Could not extract face features. If you just started the server, try again in 1–2 minutes. Otherwise use a clear, front-facing face image."
-                }
-            ),
-            400,
-        )
-
-    sex_filter = (request.form.get("sex_filter") or "").strip()
-    mongo_query = {}
-    if sex_filter:
-        mongo_query["sex"] = sex_filter
-
-    include_candidates = (request.form.get("include_candidates") or "").strip() in {"1", "true", "yes"}
-
-    scored = []
-    for doc in collection.find(mongo_query):
-        if "embedding" not in doc:
-            continue
-
-        try:
-            score = cosine_score(query_emb, doc["embedding"])
-        except Exception:
-            continue
-
-        scored.append(
-            {
-                "name": doc.get("name"),
-                "age": doc.get("age"),
-                "sex": doc.get("sex"),
-                "crime": doc.get("crime"),
-                "status": doc.get("status"),
-                "imageURL": doc.get("imageURL"),
-                "score": float(score),
-            }
-        )
-
-    scored.sort(key=lambda x: x["score"], reverse=True)
-    passed = [r for r in scored if r["score"] >= THRESHOLD]
-    if passed:
-        return jsonify({"matches": passed[:6]}), 200
-    if include_candidates:
-        return jsonify({"matches": scored[:6]}), 200
-    return jsonify({"matches": []}), 200
-
-
-@app.route("/api/enroll", methods=["POST", "OPTIONS"])
-@require_auth(required_role="ADMIN")
-def api_enroll():
-    if request.method == "OPTIONS":
-        return ("", 204)
-
-    data = request.form
-    file = request.files.get("image")
-
-    if not file:
-        return jsonify({"message": "Upload image"}), 400
-
-    file_bytes = file.read()
-
-    embedding = get_embedding(file_bytes)
-    if embedding is None:
-        return (
-            jsonify(
-                {
-                    "message": "Could not extract face features. If you just started the server, try again in 1–2 minutes. Otherwise use a clear, front-facing face image."
-                }
-            ),
-            400,
-        )
-
-    image_url = upload_image(file_bytes)
-
-    sex = (data.get("sex") or "").strip()
-    status = (data.get("status") or "ARRESTED").strip()
-
-    try:
-        doc = {
-            "name": data.get("name"),
-            "age": int(data.get("age")),
-            "sex": sex,
-            "address": data.get("address"),
-            "height": float(data.get("height")),
-            "weight": float(data.get("weight")),
-            "crime": data.get("crime"),
-            "status": status,
-            "imageURL": image_url,
-            "embedding": embedding,
-            "createdAt": datetime.utcnow(),
-        }
-    except Exception:
-        return jsonify({"message": "Invalid form fields"}), 400
-
-    inserted = collection.insert_one(doc)
-    return jsonify({"message": "Criminal added", "id": str(inserted.inserted_id)}), 201
-
-
-@app.route("/api/members", methods=["GET", "OPTIONS"])
-@require_auth()
-def api_members_search():
-    if request.method == "OPTIONS":
-        return ("", 204)
-
-    name = (request.args.get("name") or "").strip()
-    sex = (request.args.get("sex") or "").strip()
-
-    if not name:
-        return jsonify({"message": "Missing name"}), 400
-
-    mongo_query = {
-        "name": {"$regex": re.escape(name), "$options": "i"}
-    }
-
-    if sex and sex != "Any":
-        mongo_query["sex"] = sex
-
-    members = []
-    for doc in collection.find(mongo_query).sort("createdAt", -1).limit(25):
-        members.append(
-            {
-                "name": doc.get("name"),
-                "age": doc.get("age"),
-                "sex": doc.get("sex"),
-                "crime": doc.get("crime"),
-                "status": doc.get("status"),
-                "imageURL": doc.get("imageURL"),
-            }
-        )
-
-    return jsonify({"members": members}), 200
-
-
-@app.route("/api/latest-criminals", methods=["GET", "OPTIONS"])
-def api_latest_criminals():
-    if request.method == "OPTIONS":
-        return ("", 204)
-
-    try:
-        limit = int(request.args.get("limit") or 10)
-    except Exception:
-        limit = 10
-
-    limit = max(1, min(limit, 10))
-
-    criminals = []
-
-    # Home carousel: return random criminals that have an image.
-    # (Optional) allow status filtering via ?status=NOT%20ARRESTED
-    status = (request.args.get("status") or "").strip()
-
-    mongo_match = {
-        "imageURL": {"$exists": True, "$nin": [None, ""]},
-    }
-    if status:
-        mongo_match["status"] = {"$regex": rf"^\s*{re.escape(status)}\s*$", "$options": "i"}
-
-    pipeline = [
-        {"$match": mongo_match},
-        {"$sample": {"size": limit}},
-    ]
-
-    for doc in collection.aggregate(pipeline):
-        criminals.append(
-            {
-                "name": doc.get("name"),
-                "imageURL": doc.get("imageURL"),
-                "sex": doc.get("sex"),
-                "crime": doc.get("crime"),
-                "status": doc.get("status"),
-            }
-        )
-
-    return jsonify({"criminals": criminals}), 200
-
-
-@app.get("/")
-def index():
-    return render_template("index.html", matches=None)
-
-
-@app.post("/enroll")
+# ==============================
+# ENROLL
+# ==============================
+@app.route("/api/enroll", methods=["POST"])
+@require_auth("ADMIN")
 def enroll():
-    data = request.form
+    file = request.files["image"]
+    emb = get_embedding(file.read())
 
-    admin_secret_required = os.getenv("ADMIN_SECRET_KEY")
-    if not admin_secret_required:
-        flash("❌ Enrollment disabled. Set ADMIN_SECRET_KEY in your .env to enable admin-only enrollment.", "error")
-        return redirect(url_for("index"))
+    if emb is None:
+        return jsonify({"error": "Face not detected"}), 400
 
-    provided_secret = (data.get("adminSecret") or "").strip()
-    if provided_secret != admin_secret_required:
-        flash("❌ Invalid admin secret key", "error")
-        return redirect(url_for("index"))
-
-    file = request.files.get("image")
-
-    if not file:
-        flash("Upload image", "error")
-        return redirect(url_for("index"))
-
-    file_bytes = file.read()
-
-    embedding = get_embedding(file_bytes)
-    if embedding is None:
-        flash(
-            "❌ Could not extract face features (try a clearer front-facing image)",
-            "error",
-        )
-        return redirect(url_for("index"))
-
-    image_url = upload_image(file_bytes)
-
-    sex = (data.get("sex") or "").strip()
-    status = (data.get("status") or "ARRESTED").strip()
+    url = upload_image(file.read())
 
     doc = {
-        "name": data.get("name"),
-        "age": int(data.get("age")),
-        "sex": sex,
-        "address": data.get("address"),
-        "height": float(data.get("height")),
-        "weight": float(data.get("weight")),
-        "crime": data.get("crime"),
-        "status": status,
-        "imageURL": image_url,
-        "embedding": embedding,
+        "name": request.form["name"],
+        "age": int(request.form["age"]),
+        "sex": request.form["sex"],
+        "crime": request.form["crime"],
+        "status": request.form["status"],
+        "imageURL": url,
+        "embedding": emb,
         "createdAt": datetime.utcnow()
     }
 
     collection.insert_one(doc)
+    return jsonify({"message": "Added"})
 
-    flash("✅ Criminal added", "success")
-    return redirect(url_for("index"))
-
-
-@app.post("/search")
-def search():
-    file = request.files.get("image")
-    sex_filter = (request.form.get("sex_filter") or "").strip()
-
-    if not file:
-        flash("Upload image", "error")
-        return redirect(url_for("index"))
-
-    file_bytes = file.read()
-
-    query_emb = get_embedding(file_bytes)
-    if query_emb is None:
-        flash(
-            "❌ Could not extract face features (try a clearer front-facing image)",
-            "error",
-        )
-        return redirect(url_for("index"))
+# ==============================
+# MATCH
+# ==============================
+@app.route("/api/upload", methods=["POST"])
+@require_auth()
+def upload_match():
+    file = request.files["image"]
+    emb = get_embedding(file.read())
 
     results = []
-
-    mongo_query = {}
-    if sex_filter:
-        mongo_query["sex"] = sex_filter
-
-    for doc in collection.find(mongo_query):
+    for doc in collection.find():
         if "embedding" not in doc:
             continue
 
-        score = cosine_score(query_emb, doc["embedding"])
-
+        score = cosine_score(emb, doc["embedding"])
         if score >= THRESHOLD:
             results.append({
                 "name": doc["name"],
-                "age": doc["age"],
-                "sex": doc["sex"],
-                "crime": doc["crime"],
-                "status": doc["status"],
-                "imageURL": doc["imageURL"],
-                "score": score
+                "score": score,
+                "imageURL": doc["imageURL"]
             })
 
-    results.sort(key=lambda x: x["score"], reverse=True)
+    return jsonify({"matches": sorted(results, key=lambda x: x["score"], reverse=True)})
 
-    if results:
-        flash(f"✅ {len(results)} matches found", "success")
-    else:
-        flash("❌ No matches", "warning")
-
-    return render_template("index.html", matches=results[:6])
-
+# ==============================
+# LATEST
+# ==============================
+@app.route("/api/latest-criminals")
+def latest():
+    data = []
+    for doc in collection.find().limit(10):
+        data.append({
+            "name": doc.get("name"),
+            "imageURL": doc.get("imageURL")
+        })
+    return jsonify(data)
 
 # ==============================
 # RUN
 # ==============================
 if __name__ == "__main__":
-    debug = os.getenv("FLASK_DEBUG", "false").lower() in {"1", "true", "yes"}
-    port = int(os.getenv("PORT", "8000"))
-    app.run(host="0.0.0.0", debug=debug, port=port, use_reloader=False)
+    port = int(os.getenv("PORT", 8000))
+    app.run(host="0.0.0.0", port=port)
+```
