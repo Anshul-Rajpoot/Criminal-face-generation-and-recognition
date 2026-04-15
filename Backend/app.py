@@ -1,6 +1,4 @@
-@app.route("/test")
-def test():
-    return "Backend working"
+
 
 import io
 import os
@@ -32,6 +30,10 @@ load_dotenv()
 # ==============================
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev")
+
+@app.route("/test")
+def test():
+    return "Backend working"
 
 # ✅ ENABLE CORS (IMPORTANT FOR DEPLOYMENT)
 CORS(app)
